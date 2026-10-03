@@ -2,7 +2,10 @@
  * CONFIGURAÇÕES GERAIS DO MUNDO
  */
 export const TILE_SIZE = 48; 
-export const SCREEN = { w: window.innerWidth, h: window.innerHeight };
+export const SCREEN = { 
+    w: typeof window !== 'undefined' ? window.innerWidth : 800, 
+    h: typeof window !== 'undefined' ? window.innerHeight : 600 
+};
 
 // Configuração de Variedade de Texturas ---
 export const TEXTURE_VARIATIONS = {
@@ -32,12 +35,13 @@ export const COLORS = {
 /**
  * REPOSITÓRIO DE ASSETS
  */
+const img = () => typeof Image !== 'undefined' ? new Image() : null;
 export const Assets = {
     // Agora preparamos slots para as variações
-    tree1: new Image(), tree2: new Image(), tree3: new Image(),
-    box: new Image(),
-    player: new Image(), 
-    inimigo1: new Image(), inimigo2: new Image(), inimigo3: new Image(), inimigo4: new Image(),
+    tree1: img(), tree2: img(), tree3: img(),
+    box: img(),
+    player: img(), 
+    inimigo1: img(), inimigo2: img(), inimigo3: img(), inimigo4: img(),
     sounds: {}
 };
 

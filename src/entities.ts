@@ -821,7 +821,8 @@ export class Enemy {
             let aiDx = 0, aiDy = 0;
             
             // Comportamentos de Combate
-            if (this.aiType === 'rush') {
+            
+if (this.aiType === 'rush') {
                 if (dist > 30) { 
                     aiDx = Math.cos(this.angle); aiDy = Math.sin(this.angle); 
                 }
@@ -945,6 +946,45 @@ export class Enemy {
     }
 
     // Função auxiliar para encontrar ponto válido de patrulha
+    
+    findCover(map, player) {
+        // Simple cover finding: Look around 8 tiles in 2-3 block radius.
+        // Pick one that is NOT visible from player.
+        const cx = Math.floor(this.x / 48);
+        const cy = Math.floor(this.y / 48);
+        const px = player.x + 12;
+        const py = player.y + 12;
+        
+        let bestDist = 9999;
+        let bestCover = null;
+        
+        for(let r = 2; r <= 4; r++) {
+            for(let dx = -r; dx <= r; dx++) {
+                for(let dy = -r; dy <= r; dy++) {
+                    if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
+                    
+                    const testX = cx + dx;
+                    const testY = cy + dy;
+                    if (map.grid[testY] && map.grid[testY][testX] === 0) { // is floor
+                        const wX = testX * 48 + 24;
+                        const wY = testY * 48 + 24;
+                        
+                        // Check if this floor tile is hidden from player
+                        if (!map.raycast(wX, wY, px, py)) {
+                            const d = Math.hypot(wX - (this.x+12), wY - (this.y+12));
+                            if (d < bestDist) {
+                                bestDist = d;
+                                bestCover = {x: wX, y: wY};
+                            }
+                        }
+                    }
+                }
+            }
+            if (bestCover) break; // found a cover ring
+        }
+        return bestCover;
+    }
+
     pickPatrolPoint(map) {
         // Tenta 10 vezes achar um ponto válido num raio de 300px
         for(let i=0; i<10; i++) {
@@ -992,7 +1032,8 @@ export class Enemy {
             this.cooldown = 1 / this.weapon.rate;
             this.shootTimer = 0.1; 
 
-            if (this.aiType === 'rush') {
+            
+if (this.aiType === 'rush') {
                 if (M.dist(this.x, this.y, game.player.x, game.player.y) < 60) {
                     // Passa a posição do inimigo para knockback
                     game.player.takeDamage(this.weapon.dmg, game, this.x, this.y);

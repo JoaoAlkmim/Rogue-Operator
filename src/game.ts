@@ -373,7 +373,7 @@ class MapSystem {
 
         this.floorTex = null;
         this.wallTex = null;
-        this.crateHp = {};
+        this.crateHp = {}; this.barrels = {};
 
         this.shadowRight = document.createElement('canvas');
         this.shadowRight.width = 12;
@@ -395,7 +395,7 @@ class MapSystem {
     generate() {
         this.grid = new Array(this.h).fill(0).map(() => new Array(this.w).fill(1));
         this.rooms = [];
-        this.crateHp = {};
+        this.crateHp = {}; this.barrels = {};
         this.decalCtx.clearRect(0, 0, this.decalCanvas.width, this.decalCanvas.height);
 
         const roomCount = M.randInt(8, 14);
@@ -424,7 +424,42 @@ class MapSystem {
             this.carve(p1.y, p2.y, p2.x, false);
         }
 
+        
+        // --- 2.2 GERAÇÃO PROCEDURAL ORGÂNICA (Cellular Automata) ---
+        // Passos de suavização para arredondar quinas e criar cavernas
+        for (let pass = 0; pass < 3; pass++) {
+            const newGrid = this.grid.map(arr => [...arr]); // clone
+            for (let y = 1; y < this.h - 1; y++) {
+                for (let x = 1; x < this.w - 1; x++) {
+                    let wallNeighbors = 0;
+                    for (let ny = y - 1; ny <= y + 1; ny++) {
+                        for (let nx = x - 1; nx <= x + 1; nx++) {
+                            if (ny === y && nx === x) continue;
+                            if (this.grid[ny][nx] === 1 || this.grid[ny][nx] === 2) wallNeighbors++;
+                        }
+                    }
+                    // Regras do Automato
+                    if (this.grid[y][x] === 1) {
+                        newGrid[y][x] = wallNeighbors < 3 ? 0 : 1; // Parede isolada vira chão
+                    } else if (this.grid[y][x] === 0) {
+                        newGrid[y][x] = wallNeighbors >= 5 ? 1 : 0; // Chão cercado vira parede
+                    }
+                }
+            }
+            this.grid = newGrid;
+        }
+        
+        // Garante que o centro das salas sempre será chão limpo (para garantir spawn)
+        for (let r of this.rooms) {
+            for (let ry = r.center.y - 1; ry <= r.center.y + 1; ry++) {
+                for (let rx = r.center.x - 1; rx <= r.center.x + 1; rx++) {
+                    if (this.grid[ry] && this.grid[ry][rx] !== undefined) this.grid[ry][rx] = 0;
+                }
+            }
+        }
+        
         this.bakeStaticFloor();
+
         this.decorateFloor();
     }
 
@@ -1185,7 +1220,7 @@ for (let y = 2; y < this.map.h - 5; y++) {
             
         }
 
-        this.particles.forEach(p => {
+        ParticleSystem.pool.forEach(p => { if (p.life <= 0) return;
             p.x += p.vx * dt * 0.5;
             p.y += p.vy * dt * 0.5;
             p.angle += p.rotSpeed * dt;
@@ -1317,7 +1352,7 @@ for (let y = 2; y < this.map.h - 5; y++) {
             });
 
             // 4. Explosões e Partículas Brilhantes
-            this.particles.forEach(p => {
+            ParticleSystem.pool.forEach(p => { if (p.life <= 0) return;
                 if(p.type === 'explosion') {
                     // Explosão ilumina muito
                     this.lighting.addLight(p.x, p.y, p.size * 8, `rgba(255, 100, 50, ${p.life})`, false, 10);
