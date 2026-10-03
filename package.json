@@ -1,0 +1,25 @@
+{
+  "name": "rogue-operator",
+  "version": "1.0.0",
+  "description": "",
+  "main": "main.js",
+  "scripts": {
+    "dev": "vite", "build": "vite build", "preview": "vite preview"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JoaoAlkmim/Rogue-Operator.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/JoaoAlkmim/Rogue-Operator/issues"
+  },
+  "homepage": "https://github.com/JoaoAlkmim/Rogue-Operator#readme",
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vite": "^8.3.2"
+  }
+}

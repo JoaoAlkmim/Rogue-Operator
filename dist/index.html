@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CS: ROGUE OPERATOR - Tactical UI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+  <script type="module" crossorigin src="/assets/index-Cx0Dx3AF.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-DIY0gXfA.css">
+</head>
+<body>
+
+    <div id="dev-console" style="display:none;">
+        <span class="console-prefix">ADMIN_root@system:~$</span>
+        <input type="text" id="console-input" spellcheck="false" autocomplete="off">
+    </div>
+
+    <div id="scanlines"></div>
+    <div id="debug-log">INITIALIZING SYSTEM...</div>
+    
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="reload-indicator">
+        <span class="reload-text">RELOADING</span>
+        <div id="reload-fill"></div>
+    </div>
+    
+    <div id="damage-vignette"></div>
+    <div id="killstreak-display"></div>
+
+    <div id="ui-layer">
+        
+        <div id="top-right-ui" style="display:none;"> 
+            <div class="money-container">
+                <span class="currency-symbol">$</span>
+                <span id="meta-money-hud">0</span>
+            </div>
+            <div id="killfeed"></div>
+        </div>
+        
+        <div id="menu-main" class="menu-screen active">
+            <div class="menu-grid-layout">
+                
+                <div class="menu-column left">
+                    <div class="logo-area">
+                        <h1 class="glitch-title" data-text="ROGUE OPERATOR">ROGUE<br><span class="highlight">OPERATOR</span></h1>
+                        <div class="subtitle">TACTICAL SIMULATION v4.1 // <span style="color:#0f0">ONLINE</span></div>
+                    </div>
+                    
+                    <div class="menu-actions-new">
+                        <button id="btn-start" class="btn-primary">
+                            INICIAR OPERAÇÃO
+                        </button>
+                        
+                        <button id="btn-shop" class="btn-primary">
+                            MERCADO NEGRO
+                        </button>
+                        
+                        <button id="btn-settings" class="btn-primary">
+                            CONFIGURAÇÕES
+                        </button>
+                    </div>
+                </div>
+
+                <div class="menu-column right">
+                    <div class="dossier-panel">
+                        <div class="dossier-header">
+                            <span class="dossier-title">STATUS DO OPERADOR</span>
+                            <span class="dossier-id">ID: 884-CK</span>
+                        </div>
+                        
+                        <div class="stat-row">
+                            <span class="label">FUNDOS DISPONÍVEIS</span>
+                            <span class="val highlight">$<span id="meta-money">0</span></span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="label">MELHOR CAMPANHA (NÍVEL)</span>
+                            <span class="val" id="meta-best-lvl">1</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="label">BAIXAS TOTAIS (RECORDE)</span>
+                            <span class="val" id="meta-best-kills">0</span>
+                        </div>
+
+                        <div class="briefing-text" id="typewriter-text">
+                            CONEXÃO ESTABELECIDA. AGUARDANDO ORDENS DO COMANDO CENTRAL. 
+                            VERIFIQUE SEUS EQUIPAMENTOS NO MERCADO NEGRO ANTES DA INSERÇÃO.
+                             BOA SORTE, OPERADOR.
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <div id="menu-shop" class="menu-screen">
+            <div class="menu-content glass-panel large">
+                <div class="panel-header">
+                    <h2>MERCADO NEGRO</h2>
+                    
+                    <div style="font-size: 24px; color: #90ff6b; font-weight: 700; margin-bottom: 10px; text-shadow: 0 0 10px rgba(144, 255, 107, 0.3);">
+                        SALDO: $<span id="shop-money-display">0</span>
+                    </div>
+                    <div class="panel-line"></div>
+                </div>
+                <div id="shop-container"></div>
+                <div class="panel-footer">
+                    <button id="btn-shop-back" class="btn-text-only">VOLTAR AO MENU</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="menu-settings" class="menu-screen">
+            <div class="menu-content glass-panel" style="min-width: 500px;">
+                <h2>CONFIGURAÇÕES DO SISTEMA</h2>
+                <div class="panel-line"></div>
+                
+                <div class="settings-group">
+                    <div class="setting-row">
+                        <span class="setting-label">MODO IMERSIVO (FULLSCREEN)</span>
+                        <label class="switch">
+                            <input type="checkbox" id="opt-fullscreen">
+                            <span class="slider round"></span>
+                        </label>
+                    </div>
+
+                    <div class="setting-row">
+                        <span class="setting-label">SUAVIZAÇÃO (AA)</span>
+                        <label class="switch">
+                            <input type="checkbox" id="opt-aa" checked>
+                            <span class="slider round"></span>
+                        </label>
+                    </div>
+
+                    <div class="setting-row">
+                        <span class="setting-label">VOLUME GERAL [ <span id="vol-display" class="highlight">100%</span> ]</span>
+                        <input type="range" min="0" max="1" step="0.1" value="0.6" class="tech-slider" id="opt-volume">
+                    </div>
+                </div>
+
+                <div class="panel-footer" style="margin-top: 40px;">
+                    <button id="btn-settings-back" class="btn-primary">CONFIRMAR ALTERAÇÕES</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="menu-levelup" class="menu-screen">
+            <div class="menu-content glass-panel large">
+                <h2>SUPRIMENTOS TÁTICOS</h2>
+                <p class="flavor-text">ESCOLHA UMA MELHORIA DE CAMPO</p>
+                <div id="upgrade-list" class="cards-container"></div>
+            </div>
+        </div>
+
+        <div id="menu-pause" class="menu-screen">
+            <div class="menu-content glass-panel">
+                <h2>SISTEMA PAUSADO</h2>
+                <div class="pause-grid">
+                    <div class="pause-col">
+                        <h3>ARSENAL ATUAL</h3>
+                        <div id="pause-weapons" class="list-group"></div>
+                    </div>
+                    <div class="pause-col">
+                        <h3>MODIFICAÇÕES</h3>
+                        <div id="pause-perks" class="list-group"></div>
+                    </div>
+                </div>
+                <div class="menu-actions vertical">
+                    <button id="btn-resume" class="btn-primary full-width">RETOMAR</button>
+                    <button id="btn-go-back-pause" class="btn-danger full-width">ABORTAR MISSÃO</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="menu-gameover" class="menu-screen">
+            <div class="menu-content glass-panel">
+                <h1 class="danger-text">K.I.A.</h1>
+                <p class="flavor-text">OPERADOR ABATIDO EM COMBATE</p>
+                
+                <div class="stats-grid">
+                    <div class="stat-box">
+                        <div class="label">NÍVEL</div>
+                        <div class="value" id="go-level">0</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="label">BAIXAS</div>
+                        <div class="value" id="go-kills">0</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="label">EXTRAÇÃO</div>
+                        <div class="value gold-text" id="go-money">$0</div>
+                    </div>
+                </div>
+
+                <button id="btn-go-back" class="btn-primary">RETORNAR À BASE</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="hud" style="display:none;">
+        
+        <div class="hud-module left">
+            <div class="hud-header">
+                <span class="hud-icon">✚</span> SINAL VITAL
+            </div>
+            <div class="hp-complex">
+                <div class="hp-number" id="hud-hp">100</div>
+                <div class="hp-bars-container">
+                    <div id="hp-bar-fill"></div>
+                    <div class="hp-grid-overlay"></div> </div>
+            </div>
+        </div>
+
+        <div id="weapon-bar"></div>
+
+        <div class="hud-module right">
+            <div class="weapon-info">
+                <div id="hud-weapon">GLOCK-18</div>
+                <div class="fire-mode">AUTO</div>
+            </div>
+            <div class="ammo-complex">
+                <div id="hud-ammo" class="ammo-current">20</div>
+                <div class="ammo-reserve">/ <span id="hud-mag-size">20</span></div>
+            </div>
+        </div>
+    </div>
+    
+</body>
+</html>
