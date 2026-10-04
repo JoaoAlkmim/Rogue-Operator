@@ -191,7 +191,14 @@ export const AudioSys = {
         hit: () => { AudioSys.init(); AudioSys.playTone(100, 'sawtooth', 0.1); },
         click: () => { AudioSys.init(); AudioSys.playTone(800, 'triangle', 0.05); },
         shell: () => { AudioSys.init(); setTimeout(() => AudioSys.playTone(1200, 'square', 0.05), Math.random() * 300 + 200); },
-        explode: () => { AudioSys.init(); AudioSys.playTone(50, 'sawtooth', 0.3); }
+        explode: (x, y, game) => { 
+            AudioSys.init();
+            if (x !== undefined && game) {
+                AudioSys.playSpatial('explode', x, y, game);
+            } else {
+                AudioSys.playTone(50, 'sawtooth', 0.3); 
+            }
+        }
     }
 };
 
@@ -199,7 +206,52 @@ export const AudioSys = {
 // INPUT HANDLER & DEV CONSOLE
 // =============================================================================
 
-export const Input = { keys: {}, mouseX: 0, mouseY: 0, mouseDown: false, mouseClicked: false };
+export const Input = { 
+    keys: {}, mouseX: 0, mouseY: 0, mouseDown: false, mouseClicked: false, wasRT: false,
+    updateGamepad(screenW, screenH) {
+        if (!navigator.getGamepads) return;
+        const pads = navigator.getGamepads();
+        if (!pads || !pads[0]) return;
+        
+        const pad = pads[0];
+        
+        // Analogico Esquerdo (WASD)
+        const lx = pad.axes[0];
+        const ly = pad.axes[1];
+        const deadzone = 0.2;
+        
+        this.keys['a'] = lx < -deadzone;
+        this.keys['d'] = lx > deadzone;
+        this.keys['w'] = ly < -deadzone;
+        this.keys['s'] = ly > deadzone;
+        
+        // Analogico Direito (Mira)
+        const rx = pad.axes[2];
+        const ry = pad.axes[3];
+        if (Math.abs(rx) > deadzone || Math.abs(ry) > deadzone) {
+            // Emula o mouse ao redor do centro da tela (onde a camera esta)
+            this.mouseX = (screenW / 2) + rx * 250;
+            this.mouseY = (screenH / 2) + ry * 250;
+        }
+        
+        // Gatilho RT ou Botao R1 para atirar
+        if (pad.buttons[7].pressed || pad.buttons[5].pressed) {
+            if (!this.wasRT) this.mouseClicked = true;
+            else this.mouseClicked = false;
+            this.mouseDown = true;
+            this.wasRT = true;
+        } else {
+            this.mouseDown = false;
+            this.wasRT = false;
+        }
+        
+        // Dash no LT (6) ou A (0)
+        this.keys[' '] = pad.buttons[6].pressed || pad.buttons[0].pressed;
+        
+        // Recarregar no X (2)
+        this.keys['r'] = pad.buttons[2].pressed;
+    }
+};
 
 const DevConsole = {
     active: false,
@@ -711,8 +763,11 @@ class MapSystem {
 }
 
 function createExplosion(game, x, y, radius, damage) {
-    game.audio.sfx.explode();
-    game.cam.addTrauma(0.7);
+    game.audio.sfx.explode(x, y, game);
+    // Variable screen shake based on distance
+    const distToPlayer = M.dist(x, y, game.player.x + 12, game.player.y + 12);
+    const trauma = Math.max(0, 1.2 - (distToPlayer / 600)); 
+    game.cam.addTrauma(trauma);
 
     for (let i = 0; i < 10; i++) {
         ParticleSystem.spawn(x, y, 'explosion');
