@@ -1,9 +1,10 @@
 import { TILE_SIZE } from './constants.js';
 
 self.onmessage = (e) => {
-    const { id, lights, mapGrid } = e.data;
-    
-    const rayCount = 240; 
+    try {
+        const { id, lights, mapGrid } = e.data;
+        
+        const rayCount = 240; 
     const angleStep = (Math.PI * 2) / rayCount;
 
     const results = [];
@@ -84,6 +85,9 @@ self.onmessage = (e) => {
     }
 
     // Send the array buffers back
-    const buffers = results.map(r => r.points.buffer);
-    self.postMessage({ id, results }, buffers);
+        const buffers = results.map(r => r.points.buffer);
+        self.postMessage({ id, results }, buffers);
+    } catch (err) {
+        self.postMessage({ id: e.data.id, results: [] });
+    }
 };

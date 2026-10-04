@@ -10,6 +10,7 @@ import { TILE_SIZE, COLORS, M, PERKS, WEAPONS, SCREEN, Assets, LIGHT_SETTINGS, T
 import { Player, Enemy, Particle, FloatingText, Tree, DustSystem, ParticleSystem } from './entities.js';
 import { UI, Meta } from './ui.js';
 import { SpatialHash } from './physics.js';
+import { Network } from './network.js';
 import { LightingSystem } from './lighting.js'; // NOVO: Importa o sistema de luz volumétrica
 
 // =============================================================================
@@ -327,8 +328,38 @@ window.addEventListener('keyup', e => {
 });
 
 window.addEventListener('mousemove', e => { 
-    Input.mouseX = e.clientX; 
-    Input.mouseY = e.clientY; 
+    const canvas = document.getElementById('gameCanvas');
+    if (canvas) {
+        const rect = canvas.getBoundingClientRect();
+        const canvasRatio = canvas.width / canvas.height;
+        const rectRatio = rect.width / rect.height;
+        
+        let renderW = rect.width;
+        let renderH = rect.height;
+        let offsetX = 0;
+        let offsetY = 0;
+        
+        // Compensates for object-fit: contain black bars
+        if (canvasRatio > rectRatio) {
+            renderH = rect.width / canvasRatio;
+            offsetY = (rect.height - renderH) / 2;
+        } else {
+            renderW = rect.height * canvasRatio;
+            offsetX = (rect.width - renderW) / 2;
+        }
+        
+        const renderLeft = rect.left + offsetX;
+        const renderTop = rect.top + offsetY;
+        
+        const scaleX = canvas.width / renderW;
+        const scaleY = canvas.height / renderH;
+        
+        Input.mouseX = (e.clientX - renderLeft) * scaleX; 
+        Input.mouseY = (e.clientY - renderTop) * scaleY; 
+    } else {
+        Input.mouseX = e.clientX; 
+        Input.mouseY = e.clientY; 
+    }
 });
 
 window.addEventListener('mousedown', (e) => {
@@ -448,6 +479,7 @@ class MapSystem {
         this.grid = new Array(this.h).fill(0).map(() => new Array(this.w).fill(1));
         this.rooms = [];
         this.crateHp = {}; this.barrels = {};
+        this.destroyedCratesThisFrame = [];
         this.decalCtx.clearRect(0, 0, this.decalCanvas.width, this.decalCanvas.height);
 
         const roomCount = M.randInt(8, 14);
@@ -623,6 +655,7 @@ class MapSystem {
     destroyBox(tx, ty) {
         if (this.grid[ty][tx] !== 2) return;
         this.grid[ty][tx] = 3;
+        if (this.destroyedCratesThisFrame) this.destroyedCratesThisFrame.push({x: tx, y: ty});
         const ctx = this.decalCtx;
         const px = tx * TILE_SIZE;
         const py = ty * TILE_SIZE;
@@ -856,14 +889,77 @@ export const Game = {
         document.addEventListener('keydown', unlockAudio);
 
         window.addEventListener('resize', () => { 
-            if (this.map) {
-                // Resize do LightingSystem
-                this.lighting.resize(window.innerWidth, window.innerHeight); 
-            }
+            // O Lighting System NÃO deve ser redimensionado para innerWidth, ele deve espelhar a resolução base do canvas (SCREEN.w / SCREEN.h)
+            // porque o CSS cuida da escala.
         });
         window.addEventListener('keydown', (e) => { if (e.key === 'Escape' || e.key.toLowerCase() === 'p') this.togglePause(); });
 
-        document.getElementById('btn-start').onclick = () => this.startRun();
+        
+        const btnHost = document.getElementById('btn-host');
+        if (btnHost) btnHost.onclick = () => {
+            btnHost.innerText = 'CRIANDO SERVIDOR...';
+            Network.host((id) => {
+                alert('Servidor criado! Envie este ID para seus amigos: ' + id);
+                btnHost.innerText = 'RODANDO COMO HOST';
+                this.isHost = true;
+                this.remotePlayers = {}; // Para armazenar os amigos
+                
+                Network.onData = (peerId, data) => {
+                    if (!this.remotePlayers[peerId]) {
+                        this.remotePlayers[peerId] = new Player(this.map.getSpawnPoint().x, this.map.getSpawnPoint().y); this.remotePlayers[peerId].isLocal = false;
+                        // Envia o mapa inteiro para o novo cliente no próximo frame
+                        this.sendMapNextFrame = true;
+                    }
+                    this.remotePlayers[peerId].networkInput = data;
+                };
+                
+                this.startRun();
+            });
+        };
+
+        const btnJoin = document.getElementById('btn-join');
+        if (btnJoin) btnJoin.onclick = () => {
+            const joinId = document.getElementById('input-join-id').value;
+            if (!joinId) return;
+            btnJoin.innerText = 'CONECTANDO...';
+            Network.join(joinId, (id) => {
+                alert('Conectado ao Host com sucesso!');
+                this.isClient = true;
+                this.networkState = null; 
+                
+                Network.onData = (hostId, data) => {
+                    this.networkState = data; 
+                    // Garante que o mapa carrega assim que o pacote chega
+                    if (data.initMap && this.map) {
+                        this.map.grid = data.initMap;
+                        this.map.h = data.initMap.length;
+                        this.map.w = data.initMap[0].length;
+                        this.map.barrels = data.initBarrels || {};
+                        if (data.initFIdx) this.map.floorTex = Assets[`floor${data.initFIdx}`];
+                        if (data.initWIdx) this.map.wallTex = Assets[`wall${data.initWIdx}`];
+                        
+                        // RE-BAKE SHADOWS!
+                        this.map.decalCanvas.width = this.map.w * 48; // TILE_SIZE
+                        this.map.decalCanvas.height = this.map.h * 48;
+                        this.map.decalCtx.clearRect(0, 0, this.map.decalCanvas.width, this.map.decalCanvas.height);
+                        this.map.bakeStaticFloor();
+                        this.map.decorateFloor();
+
+                        if (data.initTrees) {
+                            this.trees = [];
+                            data.initTrees.forEach(t => this.trees.push(new Tree(t.x, t.y, t.size)));
+                        }
+                        if (data.initWindows) {
+                            this.windows = data.initWindows;
+                        }
+                        console.log("Mapa sincronizado com sucesso do Host!");
+                    }
+                };
+                
+                this.startRun();
+            });
+        };
+
         document.getElementById('btn-shop').onclick = () => this.openShop();
         document.getElementById('btn-shop-back').onclick = () => this.returnToMenu();
         document.getElementById('btn-go-back').onclick = () => this.returnToMenu();
@@ -953,6 +1049,7 @@ export const Game = {
         this.level = 1;
         this.stats = { kills: 0, money: 0 };
         this.player = new Player(0, 0);
+        this.player.isLocal = true;
 
         UI.show(null);
         document.getElementById('hud').style.display = 'flex';
@@ -973,6 +1070,8 @@ export const Game = {
 
         const fIdx = M.randInt(1, TEXTURE_VARIATIONS.floors);
         const wIdx = M.randInt(1, TEXTURE_VARIATIONS.walls);
+        this.map.fIdx = fIdx;
+        this.map.wIdx = wIdx;
         this.map.floorTex = Assets[`floor${fIdx}`];
         this.map.wallTex = Assets[`wall${wIdx}`];
 
@@ -1080,7 +1179,26 @@ for (let y = 2; y < this.map.h - 5; y++) {
     triggerGlitch(duration) { this.glitchTimer = duration; },
     triggerHitStop(duration) { this.hitStopTimer = duration; },
 
+    getClosestPlayer(x, y) {
+        let closest = this.player;
+        let minDist = M.dist(x, y, this.player.x, this.player.y);
+        
+        if (this.remotePlayers) {
+            for (let peerId in this.remotePlayers) {
+                const rp = this.remotePlayers[peerId];
+                if (rp.dead) continue;
+                const d = M.dist(x, y, rp.x, rp.y);
+                if (d < minDist) {
+                    minDist = d;
+                    closest = rp;
+                }
+            }
+        }
+        return closest;
+    },
+
     // =========================================================================
+
     // LOOP PRINCIPAL (UPDATE & DRAW)
     // =========================================================================
     loop(ts) {
@@ -1100,6 +1218,150 @@ for (let y = 2; y < this.map.h - 5; y++) {
         }
 
         if (this.state === 'play' && !this.paused) {
+            
+            if (typeof Input.updateGamepad === 'function') Input.updateGamepad(SCREEN.w, SCREEN.h);
+
+            // --- CLIENT LOGIC ---
+            if (this.isClient) {
+                const localInput = {
+                    keys: Input.keys,
+                    mouseX: Input.mouseX,
+                    mouseY: Input.mouseY,
+                    worldMouseX: Input.mouseX + this.cam.renderX,
+                    worldMouseY: Input.mouseY + this.cam.renderY,
+                    mouseDown: Input.mouseDown,
+                    mouseClicked: Input.mouseClicked
+                };
+                
+                // Tickrate limit for Client (approx 40 FPS to avoid WebRTC buffer bloat)
+                if (!this.netTimer) this.netTimer = 0;
+                this.netTimer += dt;
+                if (this.netTimer > 0.025) {
+                    Network.sendToHost(localInput);
+                    this.netTimer = 0;
+                    if (Input.mouseClicked) Input.mouseClicked = false;
+                }
+                
+                if (this.networkState) {
+                    const s = this.networkState;
+                    
+                    
+                    
+                    
+                    // Hydrate Enemies (Keep real instances for rendering)
+                    if (s.enemies) {
+                        this.enemies = s.enemies.map((se, i) => {
+                            let e = this.enemies[i];
+                            if (!e || e.typeId !== se.typeId) {
+                                e = new Enemy(se.x, se.y, se.typeId || 1, 1);
+                            }
+                            e.x = se.x; e.y = se.y; e.hp = se.hp; e.maxHp = se.maxHp;
+                            e.angle = se.angle; e.dead = se.dead; e.spriteName = se.spriteName;
+                            // Fake movement values so animation works
+                            e.isMoving = se.hp > 0;
+                            if (e.animTimer === undefined || isNaN(e.animTimer)) e.animTimer = 0;
+                            e.animTimer += 0.016;
+                            return e;
+                        });
+                    } else {
+                        this.enemies = [];
+                    }
+                    
+                    // PERFECT SYNC: Spawn exactly the decals the Host spawned
+                    if (s.particles && s.particles.length > 0) {
+                        s.particles.forEach(p => {
+                            // Ignore fog/dust from network, Client does it locally
+                            if (p.type !== 'fog') {
+                                ParticleSystem.spawn(p.x, p.y, p.type, p.ivx, p.ivy, { isNetwork: true, sprite: p.sprite });
+                            }
+                        });
+                        s.particles = []; // Clear so we don't spawn them again next frame
+                    }
+                    this.projectiles = s.projectiles || [];
+                    if (s.destroyedCrates && s.destroyedCrates.length > 0) {
+                        s.destroyedCrates.forEach(c => this.map.destroyBox(c.x, c.y));
+                        s.destroyedCrates = [];
+                    }
+
+                    if (s.players) {
+                        if (s.players[Network.id]) {
+                            this.player.x = s.players[Network.id].x;
+                            this.player.y = s.players[Network.id].y;
+                            this.player.hp = s.players[Network.id].hp;
+                            this.player.maxHp = s.players[Network.id].maxHp;
+                            this.player.angle = s.players[Network.id].angle;
+                            this.player.renderAngle = s.players[Network.id].angle;
+                            this.player.isMoving = s.players[Network.id].isMoving;
+                            this.player.recoilTimer = s.players[Network.id].recoilTimer;
+                            if (this.player.animTimer === undefined || isNaN(this.player.animTimer)) this.player.animTimer = 0;
+                            this.player.animTimer += 0.016; // Always increment
+
+                            // HUD Sync for Client
+                            const spData = s.players[Network.id];
+                            if (spData.ammo !== undefined) {
+                                if (this.player.weapon.ammo !== spData.ammo) {
+                                    if (spData.ammo < this.player.weapon.ammo) {
+                                        this.player.flashTimer = 0.06;
+                                    }
+                                    this.player.weapon.ammo = spData.ammo;
+                                    UI.updateAmmo(this.player);
+                                }
+                                this.player.reloading = spData.reloading;
+                                
+                                const reloadInd = document.getElementById('reload-indicator');
+                                const reloadFill = document.getElementById('reload-fill');
+                                if (this.player.reloading && reloadInd) {
+                                    reloadInd.style.display = 'block';
+                                    if (reloadFill) reloadFill.style.setProperty('--p', `${spData.reloadPct}%`);
+                                } else if (reloadInd) {
+                                    reloadInd.style.display = 'none';
+                                }
+                            }
+                        }
+                        
+                        if (!this.remotePlayers) this.remotePlayers = {};
+                        for (let peerId in s.players) {
+                            if (peerId === Network.id) continue;
+                            let rp = this.remotePlayers[peerId];
+                            if (!rp) { rp = new Player(0, 0); rp.visualSize = 64; rp.isLocal = false; }
+                            const sp = s.players[peerId];
+                            rp.x = sp.x; rp.y = sp.y; rp.hp = sp.hp; rp.maxHp = sp.maxHp;
+                            rp.angle = sp.angle; rp.renderAngle = sp.angle; 
+                            rp.isMoving = sp.isMoving;
+                            rp.recoilTimer = sp.recoilTimer;
+                            if (rp.animTimer === undefined || isNaN(rp.animTimer)) rp.animTimer = 0;
+                            rp.animTimer += 0.016; // Always increment so idle breathe works
+                            
+                            // Sync remote ammo
+                            if (sp.ammo !== undefined) {
+                                if (rp.weapon && rp.weapon.ammo !== undefined && sp.ammo < rp.weapon.ammo) {
+                                    rp.flashTimer = 0.06;
+                                }
+                                if (rp.weapon) rp.weapon.ammo = sp.ammo;
+                            }
+                            rp.reloading = sp.reloading;
+                            
+                            this.remotePlayers[peerId] = rp;
+                        }
+                    }
+                }
+                
+                try {
+                    if (this.dust) this.dust.update(0.016);
+                    ParticleSystem.update(0.016, this.map.decalCtx);
+                    this.trees.forEach(t => t.update(0.016));
+                    this.cam.update(this.player, 0.016, Input);
+                    this.draw();
+                } catch(err) {
+                    if (!window.hasAlertedClientCrash) {
+                        alert("CRASH NO CLIENTE: " + err.message + "\n" + err.stack);
+                        window.hasAlertedClientCrash = true;
+                    }
+                }
+                requestAnimationFrame((ts) => this.loop(ts));
+                return; // O Cliente aborta o calculo local!
+            }
+            // --- END CLIENT LOGIC ---
 
             // 1. Limpa a grade espacial no início do frame
             this.spatialGrid.clear();
@@ -1113,6 +1375,16 @@ for (let y = 2; y < this.map.h - 5; y++) {
             const p = this.player;
             p.update(dt, Input, this.map, this.cam, this);
             this.cam.update(p, dt, Input);
+            
+            // Host processa os inputs dos amigos
+            if (this.isHost && this.remotePlayers) {
+                for (let peerId in this.remotePlayers) {
+                    const rp = this.remotePlayers[peerId];
+                    if (rp.networkInput) {
+                        rp.update(dt, rp.networkInput, this.map, this.cam, this);
+                    }
+                }
+            }
 
             const canvas = document.getElementById('gameCanvas');
             if (this.glitchTimer > 0) {
@@ -1241,6 +1513,57 @@ for (let y = 2; y < this.map.h - 5; y++) {
 
             if (this.enemies.length === 0) this.levelComplete();
         }
+        
+        // --- HOST BROADCAST STATE ---
+        if (this.isHost) {
+            // Tickrate limit for Host
+            if (!this.netTimer) this.netTimer = 0;
+            this.netTimer += dt;
+            if (this.netTimer < 0.025) {
+                // Skip broadcast this frame, but still draw
+            } else {
+                this.netTimer = 0;
+            const state = {
+                enemies: this.enemies.map(e => ({ x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp, angle: e.angle, spriteName: e.spriteName, typeId: e.typeId, dead: e.dead })),
+                projectiles: this.projectiles.map(pr => ({ x: pr.x, y: pr.y, vx: pr.vx, vy: pr.vy, wepId: pr.wepId, explosiveRadius: pr.explosiveRadius, freezeTime: pr.freezeTime, rotSpeed: pr.rotSpeed, size: pr.size, width: pr.width, length: pr.length })),
+                players: { 
+                    'host': { 
+                        x: this.player.x, y: this.player.y, hp: this.player.hp, maxHp: this.player.maxHp, angle: this.player.angle,
+                        isMoving: this.player.isMoving, recoilTimer: this.player.recoilTimer || 0,
+                        ammo: this.player.weapon.ammo, reloading: this.player.reloading,
+                        reloadPct: this.player.reloading ? (1 - (this.player.reloadTimer / (this.player.weapon.reload * this.player.mods.reloadMult))) * 100 : 0
+                    } 
+                }
+            };
+            if (this.remotePlayers) {
+                for (let peerId in this.remotePlayers) {
+                    const rp = this.remotePlayers[peerId];
+                    state.players[peerId] = { 
+                        x: rp.x, y: rp.y, hp: rp.hp, maxHp: rp.maxHp, angle: rp.angle,
+                        isMoving: rp.isMoving, recoilTimer: rp.recoilTimer || 0,
+                        ammo: rp.weapon.ammo, reloading: rp.reloading,
+                        reloadPct: rp.reloading ? (1 - (rp.reloadTimer / (rp.weapon.reload * rp.mods.reloadMult))) * 100 : 0
+                    };
+                }
+            }
+            if (this.sendMapNextFrame) {
+                state.initMap = this.map.grid;
+                state.initBarrels = this.map.barrels;
+                state.initFIdx = this.map.fIdx;
+                state.initWIdx = this.map.wIdx;
+                state.initTrees = this.trees.map(t => ({ x: t.x, y: t.y, size: t.size }));
+                state.initWindows = this.windows.map(w => ({ x: w.x, y: w.y, w: w.w, rot: w.rot }));
+                this.sendMapNextFrame = false;
+            }
+            state.particles = ParticleSystem.networkEvents;
+            if (this.map.destroyedCratesThisFrame && this.map.destroyedCratesThisFrame.length > 0) {
+                state.destroyedCrates = this.map.destroyedCratesThisFrame;
+            }
+            Network.broadcast(state);
+            ParticleSystem.networkEvents = [];
+            this.map.destroyedCratesThisFrame = [];
+            } // Close else
+        }
 
         if (this.state === 'play' || this.state === 'paused') this.draw();
         requestAnimationFrame((ts) => this.loop(ts));
@@ -1311,8 +1634,41 @@ for (let y = 2; y < this.map.h - 5; y++) {
         ParticleSystem.drawType(this.ctx, this.cam, 'blood');
         ParticleSystem.drawType(this.ctx, this.cam, 'fog');
 
-        this.enemies.forEach(e => e.draw(this.ctx, this.cam));
+        this.enemies.forEach(e => {
+            if (e.draw) e.draw(this.ctx, this.cam);
+            else {
+                // Client-side raw draw
+                if(e.dead) return;
+                this.ctx.save();
+                this.ctx.translate(e.x + 12 - this.cam.renderX, e.y + 12 - this.cam.renderY);
+                this.ctx.rotate(e.angle);
+                if (Assets[e.spriteName]) this.ctx.drawImage(Assets[e.spriteName], -12, -12, 24, 24);
+                else { this.ctx.fillStyle = 'red'; this.ctx.fillRect(-12, -12, 24, 24); }
+                
+                // Draw HP bar
+                const pct = e.hp / e.maxHp;
+                this.ctx.fillStyle = '#f00'; this.ctx.fillRect(-12, -20, 24, 3);
+                this.ctx.fillStyle = '#0f0'; this.ctx.fillRect(-12, -20, 24 * pct, 3);
+                this.ctx.restore();
+            }
+        });
         if (this.player) this.player.draw(this.ctx, this.cam);
+        if (this.remotePlayers) {
+            for (let peerId in this.remotePlayers) {
+                const skipId = this.isHost ? 'host' : Network.id;
+                if (peerId !== skipId) {
+                    const rp = this.remotePlayers[peerId];
+                    if (rp.draw) rp.draw(this.ctx, this.cam);
+                    else {
+                        this.ctx.save();
+                        this.ctx.translate(rp.x + 12 - this.cam.renderX, rp.y + 12 - this.cam.renderY);
+                        this.ctx.rotate(rp.angle);
+                        if (Assets.player) this.ctx.drawImage(Assets.player, -12, -12, 24, 24);
+                        this.ctx.restore();
+                    }
+                }
+            }
+        }
 
         this.map.drawWalls(this.ctx, this.cam);
         this.trees.forEach(t => t.drawCanopy(this.ctx, this.cam, this.player));
@@ -1418,9 +1774,26 @@ for (let y = 2; y < this.map.h - 5; y++) {
 
             // 5. Inimigos (Olhos brilhantes no escuro - Opcional)
             this.enemies.forEach(e => {
-               // Apenas um brilho fraco vermelho para atmosfera
                if(!e.dead) this.lighting.addLight(e.x + 12, e.y + 12, 40, 'rgba(255, 0, 0, 0.15)', false);
             });
+
+            // 6. Remote Players (Os outros jogadores também precisam de lanterna e emitir luz)
+            if (this.remotePlayers) {
+                for (let peerId in this.remotePlayers) {
+                    const skipId = this.isHost ? 'host' : Network.id;
+                    if (peerId !== skipId) {
+                        const rp = this.remotePlayers[peerId];
+                        this.lighting.addLight(
+                            rp.x + 12, 
+                            rp.y + 12, 
+                            LIGHT_SETTINGS.radius, 
+                            'rgba(200, 230, 255, 0.4)', 
+                            true, // Também geram sombras e iluminam o mapa do outro
+                            2.0
+                        );
+                    }
+                }
+            }
 
             // Renderiza todas as luzes acumuladas sobre a cena
             this.lighting.render(this.ctx, this.map, this.cam);

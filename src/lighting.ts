@@ -147,9 +147,15 @@ export class LightingSystem {
     }
 
     render(gameCtx, map, cam, ambientLight = 0.95) {
-        if (!this.isComputing) {
+        if (!this.isComputing || (performance.now() - (this.lastComputeTime || 0) > 100)) {
             this.isComputing = true;
-            const lightsToCompute = this.lights.filter(l => l.castShadows).map((l, i) => ({ id: i, x: l.x, y: l.y, radius: l.radius }));
+            this.lastComputeTime = performance.now();
+            
+            // Corrige o ID: mantemos o indice original (idx) para bater com a array this.lights
+            const lightsToCompute = this.lights
+                .map((l, i) => ({ id: i, x: l.x, y: l.y, radius: l.radius, castShadows: l.castShadows }))
+                .filter(l => l.castShadows);
+                
             if (lightsToCompute.length > 0) {
                 this.worker.postMessage({ id: 0, lights: lightsToCompute, mapGrid: map.grid });
             } else {
@@ -313,7 +319,7 @@ export class LightingSystem {
         gameCtx.fillRect(0, 0, SCREEN.w, SCREEN.h);
 
         gameCtx.restore();
-        
+
         // Limpa para o próximo frame
         this.lights = [];
     }

@@ -333,7 +333,7 @@ export class Player {
     switchWeapon(idx) {
         if (idx < 0 || idx >= this.weapons.length) return;
         this.currentWepIdx = idx; this.reloading = false; this.reloadTimer = 0; this.shootTimer = 0;
-        UI.renderWeaponBar(this); UI.updateAmmo(this);
+        UI.renderWeaponBar(this); if (this.isLocal) UI.updateAmmo(this);
     }
 
     get weapon() { return this.weapons[this.currentWepIdx]; }
@@ -412,12 +412,16 @@ export class Player {
             }
         }
 
-        this.angle = Math.atan2((input.mouseY + cam.renderY) - (this.y + 12), (input.mouseX + cam.renderX) - (this.x + 12));
+        if (input.worldMouseX !== undefined) {
+            this.angle = Math.atan2(input.worldMouseY - (this.y + 12), input.worldMouseX - (this.x + 12));
+        } else {
+            this.angle = Math.atan2((input.mouseY + cam.renderY) - (this.y + 12), (input.mouseX + cam.renderX) - (this.x + 12));
+        }
         this.renderAngle = lerpAngle(this.renderAngle, this.angle, 15 * dt);
 
         if (this.mods.lifesteal > 0 && this.hp < this.maxHp && Math.random() < 0.01) { 
             this.hp = Math.min(this.hp + 0.1, this.maxHp); 
-            UI.updateHp(this); 
+            if (this.isLocal) UI.updateHp(this); 
         }
 
         if (this.shootTimer > 0) this.shootTimer -= dt;
@@ -429,7 +433,7 @@ export class Player {
             if (this.reloadTimer <= 0) {
                 this.reloading = false;
                 this.weapon.ammo = Math.floor(this.weapon.mag * this.mods.magSize);
-                UI.updateAmmo(this);
+                if (this.isLocal) UI.updateAmmo(this);
             }
         } else {
             const wantShoot = this.weapon.auto ? input.mouseDown : input.mouseClicked;
@@ -504,9 +508,7 @@ export class Player {
 
         // Empurra a CÂMERA (Kick físico)
         // Multiplicamos para ficar visível na tela
-        cam.recoilX += step[0] * 3; 
-        cam.recoilY += step[1] * 3;
-        cam.addTrauma(this.weapon.shake / 20); // Trauma adicional
+        if (this.isLocal) { cam.recoilX += step[0] * 3; cam.recoilY += step[1] * 3; cam.addTrauma(this.weapon.shake / 20); } // Trauma adicional
 
         // O ângulo final da bala soma: Mira + Recuo Acumulado + Jitter Aleatório
         // Nota: O recuo altera onde a bala VAI, forçando o player a compensar com o mouse
@@ -563,7 +565,7 @@ export class Player {
                 knockbackForce: this.mods.knockbackForce
             });
         }
-        UI.updateAmmo(this);
+        if (this.isLocal) UI.updateAmmo(this);
     }
 
     startReload(audio) { if (!this.reloading && this.weapon.ammo < Math.floor(this.weapon.mag * this.mods.magSize)) { this.reloading = true; this.reloadTimer = this.weapon.reload * this.mods.reloadMult; audio.sfx.reload(); } }
@@ -579,7 +581,7 @@ export class Player {
         
         this.hp -= amt; 
         this.hitFlash = 0.1; 
-        UI.updateHp(this); 
+        if (this.isLocal) UI.updateHp(this); 
         game.cam.addTrauma(0.5);
         game.addFloatText(this.x, this.y, `-${Math.ceil(amt)}`, '#f00');
         game.triggerGlitch(0.4);
@@ -1270,15 +1272,16 @@ if (this.aiType === 'rush') {
 }
 
 export class Tree {
-    constructor(x, y) {
+    constructor(x, y, size = null) {
         this.x = x; 
         this.y = y;
         
-        // Sorteia qual sprite usar (1 a 3)
-        this.spriteName = `tree${M.randInt(1, 3)}`;
+        // Sorteia qual sprite usar (1 a 3) (se for remoto, usa um fixo ou baseado no tamanho pra nao desincronizar)
+        this.spriteName = `tree${Math.abs(Math.floor(x + y)) % 3 + 1}`;
         
-        // Sorteia tamanho: 2 ou 3 tiles
-        this.sizeTiles = Math.random() < 0.6 ? 2 : 3;
+        // Sorteia tamanho ou usa o tamanho enviado pela rede
+        this.sizeTiles = size ? size : (Math.random() < 0.6 ? 2 : 3);
+        this.size = this.sizeTiles; // Para que o construtor salve o size correto no host
         this.pixelSize = this.sizeTiles * TILE_SIZE;
         
         // Pivô centralizado na árvore (já que é um quadrado)
@@ -1431,7 +1434,13 @@ export class DustSystem {
 
 export const ParticleSystem = {
     pool: [],
+    networkEvents: [],
     spawn(x, y, type, ivx = 0, ivy = 0, props = {}) {
+        // Ignora spawn duplicado de clientes (só o Host/Local deve gerar eventos de rede)
+        // Se props.isNetwork === true, foi spawnado via rede, não precisa reenviar
+        if (!props.isNetwork) {
+            this.networkEvents.push({ x: Math.floor(x), y: Math.floor(y), type, ivx: Math.floor(ivx), ivy: Math.floor(ivy) });
+        }
         let p = this.pool.find(p => p.life <= 0);
         if (!p) {
             p = new Particle(x, y, type, ivx, ivy, props);

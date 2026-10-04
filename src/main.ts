@@ -15,6 +15,9 @@ window.onload = async () => {
         canvas.height = window.innerHeight;
         SCREEN.w = window.innerWidth;
         SCREEN.h = window.innerHeight;
+        if (window.GameRef && window.GameRef.lighting) {
+            window.GameRef.lighting.resize(SCREEN.w, SCREEN.h);
+        }
     }
     window.addEventListener('resize', updateSize);
     updateSize();
@@ -118,5 +121,6 @@ window.onload = async () => {
 
     if(loadingDiv) loadingDiv.style.display = 'none';
     console.log("Assets sincronizados. Iniciando Rogue Operator...");
+    window.GameRef = Game;
     Game.init(canvas);
 };
